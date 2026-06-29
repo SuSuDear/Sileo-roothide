@@ -1,4 +1,4 @@
-name: Build Nightly
+name: Build Sileo
 
 on:
   push:
@@ -10,12 +10,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: nightly-release
+  group: sileo-release
   cancel-in-progress: true
 
 jobs:
-  nightly:
-    name: Build arm64 + arm64e and publish nightly
+  sileo:
+    name: Build arm64 + arm64e and publish sileo
     runs-on: macos-latest
     env:
       LC_ALL: en_US.UTF-8
@@ -57,8 +57,8 @@ jobs:
 
       - name: Collect arm64 deb
         run: |
-          mkdir -p nightly-debs
-          cp packages/*_iphoneos-arm64.deb nightly-debs/
+          mkdir -p sileo-debs
+          cp packages/*_iphoneos-arm64.deb sileo-debs/
 
       - name: Build Sileo (iphoneos-arm64e / roothide)
         run: |
@@ -66,19 +66,19 @@ jobs:
 
       - name: Collect arm64e deb
         run: |
-          cp packages/*_iphoneos-arm64e.deb nightly-debs/
+          cp packages/*_iphoneos-arm64e.deb sileo-debs/
 
-      - name: Publish Nightly Release
+      - name: Publish Sileo Release
         uses: ncipollo/release-action@v1
         with:
-          tag: nightly
-          name: Nightly
+          tag: sileo
+          name: Sileo
           body: |
-            Automated nightly build.
+            Automated sileo build.
             Commit: ${{ github.sha }}
           prerelease: true
           allowUpdates: true
           removeArtifacts: true
           replacesArtifacts: true
           artifactErrorsFailBuild: true
-          artifacts: "nightly-debs/*.deb"
+          artifacts: "sileo-debs/*.deb"
