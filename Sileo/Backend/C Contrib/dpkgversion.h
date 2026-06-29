@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <ctype.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 struct DpkgVersion {
     char *version;

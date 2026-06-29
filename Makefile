@@ -15,6 +15,7 @@ TARGET_CODESIGN = $(shell which ldid)
 
 SILEOTMP = $(TMPDIR)/sileo
 SILEO_STAGE_DIR = $(SILEOTMP)/stage
+ALDERIS_CHECKOUT_FILE = $(SILEOTMP)/SourcePackages/checkouts/Alderis/Alderis/ColorPickerInnerViewController.swift
 
 # Platform to build for.
 SILEO_PLATFORM ?= iphoneos-arm
@@ -205,9 +206,14 @@ stage: all
 	@echo $(SILEO_APP_DIR)
 	@echo $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/$(SILEO_APP)
 	@set -o pipefail; \
-		xcodebuild -jobs $(shell sysctl -n hw.ncpu) -project 'Sileo.xcodeproj' -scheme "$(SCHEME)" -configuration $(BUILD_CONFIG) -arch $(ARCH) -sdk $(PLATFORM) -derivedDataPath $(SILEOTMP) \
+		LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 LANG=en_US.UTF-8 xcodebuild -resolvePackageDependencies -project 'Sileo.xcodeproj' -scheme "$(SCHEME)" -derivedDataPath $(SILEOTMP) $(XCPRETTY)
+	@if [ -f "$(ALDERIS_CHECKOUT_FILE)" ]; then \
+		perl -0777 -i -pe 's/\bvar tab: ColorPickerTab \{/var selectedTab: ColorPickerTab {/g; s/\btab = configuration\.initialTab\b/selectedTab = configuration.initialTab/g' "$(ALDERIS_CHECKOUT_FILE)"; \
+	fi
+	@set -o pipefail; \
+		LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 LANG=en_US.UTF-8 xcodebuild -jobs $(shell sysctl -n hw.ncpu) -project 'Sileo.xcodeproj' -scheme "$(SCHEME)" -configuration $(BUILD_CONFIG) -arch $(ARCH) -sdk $(PLATFORM) -derivedDataPath $(SILEOTMP) -disableAutomaticPackageResolution \
 		CODE_SIGNING_ALLOWED=NO PRODUCT_BUNDLE_IDENTIFIER=$(PRODUCT_BUNDLE_IDENTIFIER) DISPLAY_NAME=$(DISPLAY_NAME) \
-		DSTROOT=$(SILEOTMP)/install $(XCPRETTY) ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO
+		DSTROOT=$(SILEOTMP)/install $(XCPRETTY) ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO COMPRESS_PNG_FILES=NO
 	@rm -rf $(SILEO_STAGE_DIR)/
 	@mkdir -p $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/
 	@mv $(SILEO_APP_DIR) $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/$(SILEO_APP)
@@ -232,8 +238,13 @@ stage: all
 else
 stage: all
 	@set -o pipefail; \
-		xcodebuild -jobs $(shell sysctl -n hw.ncpu) -project 'Sileo.xcodeproj' -scheme 'Sileo' $(DESTINATION) -configuration $(BUILD_CONFIG) ARCHS=$(ARCH) -derivedDataPath $(SILEOTMP) \
-		DSTROOT=$(SILEOTMP)/install $(XCPRETTY) ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO
+		LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 LANG=en_US.UTF-8 xcodebuild -resolvePackageDependencies -project 'Sileo.xcodeproj' -scheme 'Sileo' $(DESTINATION) -derivedDataPath $(SILEOTMP) $(XCPRETTY)
+	@if [ -f "$(ALDERIS_CHECKOUT_FILE)" ]; then \
+		perl -0777 -i -pe 's/\bvar tab: ColorPickerTab \{/var selectedTab: ColorPickerTab {/g; s/\btab = configuration\.initialTab\b/selectedTab = configuration.initialTab/g' "$(ALDERIS_CHECKOUT_FILE)"; \
+	fi
+	@set -o pipefail; \
+		LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 LANG=en_US.UTF-8 xcodebuild -jobs $(shell sysctl -n hw.ncpu) -project 'Sileo.xcodeproj' -scheme 'Sileo' $(DESTINATION) -configuration $(BUILD_CONFIG) ARCHS=$(ARCH) -derivedDataPath $(SILEOTMP) -disableAutomaticPackageResolution \
+		DSTROOT=$(SILEOTMP)/install $(XCPRETTY) ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=NO COMPRESS_PNG_FILES=NO
 	@rm -rf $(SILEO_STAGE_DIR)
 	@mkdir -p $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/
 	@rm -rf $(SILEO_STAGE_DIR)/$(PREFIX)/Applications/$(SILEO_APP)

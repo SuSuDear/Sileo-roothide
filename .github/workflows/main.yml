@@ -1,103 +1,84 @@
+name: Build Nightly
+
 on:
   push:
     branches:
       - main
-name: Build
-jobs:
-  make:
-    name: Build and Upload Sileo
-    runs-on: macos-12
-    steps:
+  workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: Build arm64 + arm64e and publish nightly
+    runs-on: macos-latest
+    env:
+      LC_ALL: en_US.UTF-8
+      LANG: en_US.UTF-8
+
+    steps:
       - name: Checkout
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.SILEO_PAT }}
-      - name: Import all certificates
-        env:
-          DEVELOPMENT_PASSWORD: ${{ secrets.DEVELOPMENT_PASSWORD }}
-          DEVELOPMENT_CERTIFICATE: ${{ secrets.DEVELOPMENT_CERTIFICATE }}
-          DISTRIBUTION_CERTIFICATE: ${{ secrets.DISTRIBUTION_CERTIFICATE }}
-          DISTRIBUTION_PASSWORD: ${{ secrets.DISTRIBUTION_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          security create-keychain -p "" build.keychain
-          security list-keychains -s build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security set-keychain-settings
-          security import <(echo $DEVELOPMENT_CERTIFICATE | base64 --decode) \
-                          -f pkcs12 \
-                          -k build.keychain \
-                          -P $DEVELOPMENT_PASSWORD \
-                          -T /usr/bin/codesign
-          security import <(echo $DISTRIBUTION_CERTIFICATE | base64 --decode) \
-                          -f pkcs12 \
-                          -k build.keychain \
-                          -P $DISTRIBUTION_PASSWORD \
-                          -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
 
-      - name: Setup Procursus Bootstrap (install)
-        run: |
-          wget https://apt.procurs.us/bootstraps/big_sur/bootstrap-darwin-amd64.tar.zst
-          sudo gtar --preserve-permissions -xkf ./bootstrap-darwin-amd64.tar.zst -C /
-          echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
-          PATH=/opt/procursus/sbin:/opt/procursus/bin:$PATH sudo /opt/procursus/bin/apt update
-          sudo /opt/procursus/bin/apt -V full-upgrade -y --allow-downgrades -oDpkg::Options::=--force-confdef -oDpkg::Options::=--force-confnew 
-        continue-on-error: true
-      
-      - name: Upgrade
-        run: |
-          sudo /opt/procursus/bin/apt -V upgrade -y --allow-downgrades -oDpkg::Options::=--force-confdef -oDpkg::Options::=--force-confnew
-    
-      - name: Upgrade and install
-        run: |
-          sudo /opt/procursus/bin/apt install zstd apt-utils ldid xz-utils bzip2 lz4 -y --allow-downgrades -oDpkg::Options::=--force-confdef -oDpkg::Options::=--force-confnew
-        
-      - name: Add Procursus to PATH
-        run: |
-          echo '/opt/procursus/sbin:/opt/procursus/bin' >> $GITHUB_PATH
-
-      - name: Select Correct Xcode (14.2)
-        run: |
-          sudo xcode-select --switch /Applications/Xcode_14.2.app
-
-      - name: Build Sileo Nightly (iphoneos-arm)
-        run: |
-          make clean package NIGHTLY=1 DEBUG=0 ALL_BOOTSTRAPS=1
-
-      - name: Build Sileo Nightly (iphoneos-arm64)
-        run: |
-          make clean package NIGHTLY=1 DEBUG=0 ALL_BOOTSTRAPS=1 SILEO_PLATFORM=iphoneos-arm64
-
-      - name: Build Sileo Nightly (darwin-amd64)
-        run: |
-          make clean package NIGHTLY=1 DEBUG=0 AUTOMATION=1 SILEO_PLATFORM=darwin-amd64
-
-      - name: Build Sileo Nightly (darwin-arm64)
-        run: |
-          make clean package NIGHTLY=1 DEBUG=0 AUTOMATION=1 SILEO_PLATFORM=darwin-arm64
-      
-      - name: Import GPG key
-        id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v5
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          xcode-version: latest-stable
 
-      - name: Push To Repo
-        env:
-          AMY_GITHUB_TOKEN: ${{ secrets.AMY_GITHUB }}
+      - name: Install bootstrap prerequisites
         run: |
-          git config --global user.name "Amy While (Automated)"
-          git config --global user.email "26681721+elihwyma@users.noreply.github.com"
-          git config --global credential.helper cache 
+          brew install wget gnu-tar zstd
 
-          git clone https://${{ env.AMY_GITHUB_TOKEN }}@github.com/elihwyma/amy-repo.git
-          mv packages/* amy-repo/pool/
-          cd amy-repo
-          ./repo.sh
-          git add . 
-          git commit -m "build: sileo"
-          git push
+      - name: Setup Procursus
+        run: |
+          set -euxo pipefail
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            PROC_ARCH="arm64"
+          else
+            PROC_ARCH="amd64"
+          fi
+          BOOTSTRAP_URL="https://apt.procurs.us/bootstraps/big_sur/bootstrap-darwin-${PROC_ARCH}.tar.zst"
+          wget "$BOOTSTRAP_URL" -O bootstrap-darwin.tar.zst
+          sudo gtar --preserve-permissions -xkf ./bootstrap-darwin.tar.zst -C /
+          echo "/opt/procursus/sbin:/opt/procursus/bin" >> "$GITHUB_PATH"
+          PATH=/opt/procursus/sbin:/opt/procursus/bin:$PATH sudo /opt/procursus/bin/apt update
+          sudo /opt/procursus/bin/apt install zstd apt-utils ldid xz-utils bzip2 lz4 -y --allow-downgrades -oDpkg::Options::=--force-confdef -oDpkg::Options::=--force-confnew
+
+      - name: Build Sileo (iphoneos-arm64)
+        run: |
+          make clean package SILEO_PLATFORM=iphoneos-arm64
+
+      - name: Collect arm64 deb
+        run: |
+          mkdir -p nightly-debs
+          cp packages/*_iphoneos-arm64.deb nightly-debs/
+
+      - name: Build Sileo (iphoneos-arm64e / roothide)
+        run: |
+          make clean package SILEO_PLATFORM=iphoneos-arm64e
+
+      - name: Collect arm64e deb
+        run: |
+          cp packages/*_iphoneos-arm64e.deb nightly-debs/
+
+      - name: Publish Nightly Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: nightly
+          name: Nightly
+          body: |
+            Automated nightly build.
+            Commit: ${{ github.sha }}
+          prerelease: true
+          allowUpdates: true
+          removeArtifacts: true
+          replacesArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: "nightly-debs/*.deb"
